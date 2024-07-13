@@ -1,0 +1,14 @@
+{
+  "name": "BotEuro",
+  "version": "1.0.0",
+  "dependencies": {
+    "axios": "^1.7.2",
+    "axios-cookiejar-support": "^5.0.2",
+    "express": "^4.19.2",
+    "moment-timezone": "^0.5.45",
+    "node-cron": "^3.0.3",
+    "node-telegram-bot-api": "^0.66.0",
+    "tough-cookie": "^4.1.4",
+    "ws": "^8.18.0"
+  }
+}
