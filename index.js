@@ -242,20 +242,17 @@ async function checkAllGift() {
         ) {
             const message = "Bắt đầu trao đổi voucher...";
             console.log(message);
-            broadcast({type: 'status', data: message});
             await sendTelegramMessage(message);
             return true;
         } else {
             const randomNum = Math.floor(Math.random() * 1000);
             const message = `Chưa có sự thay đổi về số lượng quà ${randomNum}`;
             console.log(message);
-            broadcast({type: 'status', data: message});
             return await checkAllGift();
         }
     } catch (error) {
         const message = `Lỗi check gift: ${error.message}`;
         console.error(message);
-        broadcast({type: 'status', data: message});
         await sendTelegramMessage(message);
         return await checkAllGift();
     }
