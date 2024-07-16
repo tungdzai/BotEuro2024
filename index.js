@@ -1,13 +1,8 @@
-const WebSocket = require('ws');
 const axios = require('axios');
 const tough = require('tough-cookie');
 const {wrapper} = require('axios-cookiejar-support');
 const fs = require('fs');
-const express = require('express');
-const {Server} = require('ws');
-const app = express();
-const PORT = process.env.PORT || 8080;
-app.use(express.static('public'));
+const keep_alive = require('./keep_alive')
 
 const TelegramBot = require('node-telegram-bot-api');
 const token = '7318161009:AAEZPx2RIBXhDWgHUIAlzJFAvyj6ia45yRw';
@@ -22,42 +17,13 @@ async function sendTelegramMessage(message) {
     }
 }
 
-const server = app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-});
-const wss = new Server({server});
-let validDataList = [];
-let checkAllGiftStatus = '';
-wss.on('connection', (ws) => {
-    console.log('Client connected');
-
-    if (validDataList.length > 0) {
-        ws.send(JSON.stringify({type: 'validDataList', data: validDataList}));
-    }
-    if (checkAllGiftStatus) {
-        ws.send(JSON.stringify({type: 'status', data: checkAllGiftStatus}));
-    }
-
-    ws.on('close', () => {
-        console.log('Client disconnected');
-    });
-});
-
-function broadcast(data) {
-    wss.clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify(data));
-        }
-    });
-}
-
 async function delay(minSeconds, maxSeconds) {
     const randomDelay = Math.floor(Math.random() * (maxSeconds - minSeconds + 1) * 1000) + (minSeconds * 1000);
     await new Promise(resolve => setTimeout(resolve, randomDelay));
     return randomDelay / 1000;
 }
 
-async function authLogin(token, retries = 3) {
+async function authLogin(token, retries = 2) {
     if (retries < 0) {
         return null;
     } else if (retries < 2) {
@@ -97,38 +63,6 @@ async function authLogin(token, retries = 3) {
     } catch (error) {
         console.error("Lỗi xác thực:", error);
         return await authLogin(token, retries - 1);
-    }
-}
-
-async function getInfo(cookie, retries = 3) {
-    if (retries < 0) {
-        return null;
-    } else if (retries < 3) {
-        // Đợi 1s đến 3s
-        await delay(1, 3);
-    }
-    try {
-        const jar = new tough.CookieJar();
-        const client = wrapper(axios.create({jar}));
-        const urlGetPlayer = "https://var.fconline.garena.vn/api/player/get";
-        const response = await client.get(urlGetPlayer, {
-            headers: {
-                'sec-ch-ua': '"Google Chrome";v="125", "Chromium";v="125", "Not.A/Brand";v="24"',
-                'Accept': 'application/json, text/plain, */*',
-                'sec-ch-ua-mobile': '?0',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
-                'sec-ch-ua-platform': '"Windows"',
-                'Sec-Fetch-Site': 'same-origin',
-                'Sec-Fetch-Mode': 'cors',
-                'Sec-Fetch-Dest': 'empty',
-                'host': 'var.fconline.garena.vn',
-                'Cookie': cookie
-            }
-        });
-        return response.data;
-    } catch (error) {
-        console.error("Lỗi lấy thông tin người chơi", error);
-        return await getInfo(cookie, retries - 1);
     }
 }
 
@@ -332,12 +266,11 @@ async function processGifts() {
     try {
         const validDataList = await prepareData();
         if (validDataList.length > 0) {
-            console.log("Dữ liệu đã sẵn sàng", validDataList.length);
-            broadcast({type: 'Dữ liệu đã thực thi', data: validDataList.length});
-            await sendTelegramMessage(validDataList.length);
+            const message = `Dữ liệu đã sẵn sàng:${validDataList.length}`
+            await sendTelegramMessage(message);
         } else {
-            console.log("Không có dữ liệu hợp lệ.");
-            broadcast({type: 'status', data: "Không có dữ liệu hợp lệ."});
+            const message=`Dữ liệu hợp lệ`
+            await sendTelegramMessage(message);
         }
 
         const status = await checkAllGift();
@@ -346,10 +279,6 @@ async function processGifts() {
                 return exchangeVoucher(data.cookie, data.exchangerId).then(async result => {
                     const message = `Token: ${data.token}, Point: ${data.point}, ID: ${data.exchangerId}, Result: ${JSON.stringify(result)}`;
                     console.log(message);
-                    broadcast({
-                        type: 'exchangeResult',
-                        data: {token: data.token, point: data.point, id: data.exchangerId, result}
-                    });
                     await sendTelegramMessage(message);
                 });
             });
@@ -359,78 +288,10 @@ async function processGifts() {
         const message = `Lỗi trong quá trình xử lý quà: ${error.message}`;
         console.error(message);
         await sendTelegramMessage(message);
-        broadcast({type: 'status', data: message});
     }
 }
 
 processGifts().catch((error) => {
     const message = `Lỗi trong lần chạy đầu tiên: ${error.message}`;
     console.error(message);
-    broadcast({type: 'status', data: message});
 });
-
-
-app.get('/', (req, res) => {
-    res.send(`
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Voucher Exchange Status</title>
-            <style>
-                body {
-                    font-family: Arial, sans-serif;
-                    padding: 20px;
-                }
-                #validDataList, #status {
-                    margin-bottom: 20px;
-                }
-            </style>
-        </head>
-        <body>
-            <h1>Voucher Exchange Status</h1>
-            <div id="status"></div>
-            <div id="validDataList"></div>
-            <div id="totalDataCount"></div>
-
-            <script>
-                const ws = new WebSocket('ws://' + location.host);
-
-                ws.onmessage = (event) => {
-                    const message = JSON.parse(event.data);
-                    console.log(message)
-                    if (message.type === 'validDataList') {
-                        const validDataListElement = document.getElementById('validDataList');
-                        validDataListElement.innerHTML = '<h2>Valid Data List</h2>';
-                        message.data.forEach(item => {
-                            const div = document.createElement('div');
-                            div.textContent = \`Token: \${item.token}, Cookie: \${item.cookie}, ExchangerId: \${item.exchangerId}\`;
-                            validDataListElement.appendChild(div);
-                        });
-                    } else if (message.type === 'status') {
-                        const statusElement = document.getElementById('status');
-                        const div = document.createElement('div');
-                        div.textContent = message.data;
-                        statusElement.appendChild(div);
-                    } else if (message.type === 'exchangeResult') {
-                        const statusElement = document.getElementById('status');
-                        const div = document.createElement('div');
-                        div.textContent = \`Token: \${message.data.token}, Point: \${message.data.point}, ID: \${message.data.id}, Result: \${JSON.stringify(message.data.result)}\`;
-                        statusElement.appendChild(div);
-                    }
-                };
-
-                ws.onopen = () => {
-                    console.log('WebSocket connected');
-                };
-
-                ws.onclose = () => {
-                    console.log('WebSocket disconnected');
-                };
-            </script>
-        </body>
-        </html>
-    `);
-});
-
